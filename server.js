@@ -219,16 +219,27 @@ ${data.signedUrl}
 
   // Fallback → Grok style reply
  // Auto handover on medical keywords
-if (/bimar|doctor|pharmacist|urgent|pain|dosage|side effect|khurak/i.test(agent.query.toLowerCase())) {
-  await talkToPharmacist(agent);
-  return;
-}
- async function fallback() {
-    await log('user', agent.query);
-    const reply = await geminiReply(agent.query);
-    agent.add(reply);
-    await log('bot', reply);
+async function fallback(agent) {
+  await log('user', agent.query);
+
+  // agar medical keyword ya urdu word ho to direct handover
+  if (/bimar|dawai|parchi|pharmacist|doctor|pain|urgent|khurak|order|skip|bhai|yar/i.test(agent.query)) {
+    await talkToPharmacist(agent);
+    return;
   }
+
+  // warna Gemini ko Urdu mein force karo
+  const result = await model.generateContent(`
+    User (Karachi, Pakistan) ne ye likha: "${agent.query}"
+    Sirf Roman Urdu mein reply karo, bilkul dost jaisa, funny aur helpful.
+    Medical advice bilkul mat dena. Agar samajh na aaye to pharmacist handover kar do.
+    Sirf ek message mein reply karo.
+  `);
+
+  const reply = result.response.text() || "Sorry bhai, samajh nahi aaya. Pharmacist se baat karo?";
+  agent.add(reply);
+  await log('bot', reply);
+}
 
   // Intent Map
   const intentMap = new Map();

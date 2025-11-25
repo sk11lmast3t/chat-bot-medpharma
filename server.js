@@ -126,26 +126,33 @@ async function talkToPharmacist(agent) {
 
 // Fallback
 async function fallback(agent) {
-  await log(agent.session.split('/').pop(), 'user', agent.query);
+  const sessionId = agent.session.split('/').pop();
+  await log(sessionId, 'user', agent.query);
+
+  // agar data collection chal raha ho to wahi continue
+  if (USER_STATE[sessionId]) {
+    await collectDetails(agent);
+    return;
+  }
 
   const lower = agent.query.toLowerCase();
 
-  // SIRF YE WORDS PE HANDOVER
+  // YE SIRF CLEAR PHARMACIST REQUEST PE HANDOVER
   if (lower.includes('pharmacist') || 
       lower.includes('doctor') || 
       lower.includes('human') || 
       lower.includes('insaan') || 
       lower.includes('baat kar') || 
       lower.includes('connect') ||
-      lower.includes('urgent')) {
+      lower.includes('live person')) {
     await talkToPharmacist(agent);
     return;
   }
 
-  // warna normal Gemini reply
+  // warna Gemini se reply
   const reply = await geminiReply(agent.query);
   agent.add(reply);
-  await log(agent.session.split('/').pop(), 'bot', reply);
+  await log(sessionId, 'bot', reply);
 }
 
 // Webhook

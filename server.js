@@ -154,13 +154,23 @@ ${data.signedUrl}
   }
 
   // Talk to pharmacist
-  async function talkToPharmacist() {
-    await supabase.from('conversations').upsert({ session_id: sessionId, needs_human: true });
-    agent.add("بھائی ابھی رجسٹرڈ فارماسسٹ کو بلا رہا ہوں... 1-2 منٹ لگے گا، انتظار کرو!");
-  }
+  aasync function talkToPharmacist() {
+  await supabase.from('conversations').upsert({ 
+    session_id: sessionId, 
+    needs_human: true,
+    phone: USER_STATE[sessionId]?.data?.phone || null
+  });
+  agent.add("Theek hai bhai, pharmacist se connect kar raha hoon. 1 minute wait karo…");
+  await log('bot', 'Pharmacist handover triggered');
+}
 
   // Fallback → Grok style reply
-  async function fallback() {
+ // Auto handover on medical keywords
+if (/bimar|doctor|pharmacist|urgent|pain|dosage|side effect|khurak/i.test(agent.query.toLowerCase())) {
+  await talkToPharmacist(agent);
+  return;
+}
+ async function fallback() {
     await log('user', agent.query);
     const reply = await geminiReply(agent.query);
     agent.add(reply);

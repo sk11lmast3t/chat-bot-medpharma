@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MedEasy Pharmacy - Karachi</title>
+  <meta name="description" content="Ghar bethay dawai, prescription upload, live pharmacist"/>
+
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      text-align: center;
+    }
+    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 3.2rem; margin-bottom: 15px; }
+    p { font-size: 1.4rem; opacity: 0.9; margin: 20px 0; }
+    .features {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 25px; margin: 50px 0;
+    }
+    .box {
+      background: rgba(255,255,255,0.15);
+      padding: 25px; border-radius: 18px; width: 260px; backdrop-filter: blur(10px);
+    }
+    .box h3 { font-size: 1.5rem; margin-bottom: 10px; }
+    @media (max-width: 768px) {
+      h1 { font-size: 2.4rem; }
+      .box { width: 90%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MedEasy Pharmacy</h1>
+    <p>Ghar bethay dawai mangwao • Prescription upload karo • Pharmacist se fori baat</p>
+    <p style="font-size:1.7rem;font-weight:600;">24 Hours Available • Free Delivery All Over Karachi</p>
+
+    <div class="features">
+      <div class="box"><h3>Prescription Upload</h3><p>Doctor ki parchi bhejo, dawai ghar mangwao</p></div>
+      <div class="box"><h3>Live Pharmacist</h3><p>Koi bhi sawal? Fori registered pharmacist se baat</p></div>
+      <div class="box"><h3>Free Delivery</h3><p>Karachi mein saare orders pe muft home delivery</p></div>
+    </div>
+  </div>
+
+<script src="https://www.gstatic.com/dialogflow-console/fast/messenger/bootstrap.js?v=1"></script>
+  <df-messenger
+    intent="WELCOME"
+    chat-title="MedEasy Pharmacy"
+    agent-id="4d16934c-e65b-4376-81b1-17d51b00b854"
+    language-code="en"
+    expand="false">
+  </df-messenger>
+
+</body>
+
+</html>

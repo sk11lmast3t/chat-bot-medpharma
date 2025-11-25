@@ -19,11 +19,14 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 // Global state for collecting user info
 const USER_STATE = {};
 
-const GROK_STYLE_PROMPT = `آپ ایک بہت ہی ذہین، مزاحیہ اور مددگار پاکستانی فارمیسی اسسٹنٹ ہیں۔ 
-بھائی، یار، جان، واہ جیسے لفظ استعمال کریں۔ 
-کبھی بیماری کی تشخیص نہ کریں، دوائی نہ تجویز کریں، ڈوز نہ بتائیں۔
-اگر طبی بات ہو تو کہیں: "بھائی میں ڈاکٹر نہیں ہوں، ابھی فارماسسٹ سے ملوا دیتا ہوں؟"
-کراچی والوں کی طرح بات کریں، تھوڑا رومان اردو، تھوڑا انگریزی مکس۔`;
+ const GROK_STYLE_PROMPT = `You are MedBot, a helpful Pakistani pharmacy assistant for MedEasy Pharmacy in Karachi.
+Speak in Roman Urdu + English mix (like Karachi people talk).
+Rules:
+- NEVER diagnose, prescribe, or give dosage.
+- For medical questions (bimar hoon, pain, dosage): Say "Sorry bhai, main doctor nahi. Pharmacist se baat karo? Main connect kar dun."
+- If query in Urdu (bimar, dawai, parchi): Reply in Roman Urdu.
+- Be fun, empathetic, like a friend: Use "bhai", "yar", "theek hai".
+- If low confidence, ask to repeat in English or Urdu.`;
 
 app.post('/webhook', async (req, res) => {
   const agent = new WebhookClient({ request: req, response: res });
@@ -33,22 +36,29 @@ app.post('/webhook', async (req, res) => {
     await supabase.from('messages').insert({ session_id: sessionId, sender, text }).catch(() => {});
   };
 
-  const geminiReply = async (query) => {
-    try {
-      const chat = model.startChat({
-        history: [{ role: "model", parts: [{ text: GROK_STYLE_PROMPT }] }]
-      });
-      const result = await chat.sendMessage(query);
-      let reply = result.response.text();
-
-      if (/dose|dosage|خوراک|لینا|پیٹ|حاملہ|الرجی|سائیڈ|side/i.test(reply)) {
-        reply = "ارے بھائی! یہ تو طبی بات ہو گئی 😅 میں تو بس AI ہوں، ڈاکٹر نہیں۔ ابھی فارماسسٹ سے ملوا دوں؟";
-      }
-      return reply;
-    } catch (e) {
-      return "یار نیٹ ورک میں کوئی مسئلہ ہے... ابھی فارماسسٹ سے ملوا دیتا ہوں!";
+ const geminiReply = async (query) => {
+  try {
+    // Simple Urdu detection (add more words as needed)
+    const isUrdu = /bimar|dawai|parchi|dosage|pain|khurak/i.test(query);
+    let prompt = GROK_STYLE_PROMPT;
+    if (isUrdu) {
+      prompt += `\nUser query in Urdu: ${query}. Reply in Roman Urdu.`;
     }
-  };
+    const chat = model.startChat({
+      history: [{ role: "model", parts: [{ text: prompt }] }]
+    });
+    const result = await chat.sendMessage(query);
+    let reply = result.response.text();
+    
+    // Safety for medical
+    if (/bimar|sick|pain|dosage|side effect/i.test(reply.toLowerCase())) {
+      reply = "Sorry bhai, main medical advice nahi de sakta. Kya pharmacist se connect kar dun? (Yes/No)";
+    }
+    return reply;
+  } catch (e) {
+    return "Yar, thodi problem aa gayi. Pharmacist se baat karo?";
+  }
+};
 
   // Welcome
   async function welcome() {

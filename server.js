@@ -128,25 +128,21 @@ async function talkToPharmacist(agent) {
 async function fallback(agent) {
   await log(agent.session.split('/').pop(), 'user', agent.query);
 
-  // agar user data collection chal raha ho to wahi continue karo
-  if (USER_STATE[agent.session.split('/').pop()]) {
-    await collectDetails(agent);
-    return;
-  }
-
-  // agar user ne CLEARLY pharmacist maanga ho tab hi handover
   const lower = agent.query.toLowerCase();
+
+  // SIRF YE WORDS PE HANDOVER
   if (lower.includes('pharmacist') || 
       lower.includes('doctor') || 
       lower.includes('human') || 
       lower.includes('insaan') || 
-      lower.includes('baat karo') ||
-      lower.includes('connect')) {
+      lower.includes('baat kar') || 
+      lower.includes('connect') ||
+      lower.includes('urgent')) {
     await talkToPharmacist(agent);
     return;
   }
 
-  // warna Gemini se normal reply
+  // warna normal Gemini reply
   const reply = await geminiReply(agent.query);
   agent.add(reply);
   await log(agent.session.split('/').pop(), 'bot', reply);

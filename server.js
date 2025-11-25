@@ -61,87 +61,140 @@ app.post('/webhook', async (req, res) => {
 };
 
   // Welcome
-  async function welcome() {
-    agent.add(`السلام علیکم یار! میڈ ایزی فارمیسی میں خوش آمدید 
+ // GLOBAL STATE – USER KA DATA YAHAN STORE HOGA
+const USER_STATE = {};
 
-کیا حال ہے؟ آج کون سی دوائی چاہیے؟ 😄
+// WELCOME MESSAGE
+async function welcome(agent) {
+  agent.add(`Assalamualaikum bhai! MedEasy Pharmacy mein khush aamdeed
 
-• نیا آرڈر شروع کریں
-• پرچی اپ لوڈ کریں
-• فارماسسٹ سے بات کریں`);
+Kya haal hai? Aaj kya chahiye?
 
-    agent.add(new Suggestion('نیا آرڈر شروع کریں'));
-    agent.add(new Suggestion('پرچی اپ لوڈ کریں'));
-    agent.add(new Suggestion('فارماسسٹ سے بات کریں'));
+• Naya order shuru karo
+• Parchi upload karo
+• Pharmacist se baat karo`);
+
+  agent.add(new Suggestion('Naya order shuru karo'));
+  agent.add(new Suggestion('Parchi upload karo'));
+  agent.add(new Suggestion('Pharmacist se baat karo'));
+}
+
+// JAB USER BOLE "NAYA ORDER" YA BUTTON DABAYE
+async function startOrdering(agent) {
+  const sessionId = agent.session.split('/').pop();
+  USER_STATE[sessionId] = { step: 'phone', data: {} };
+
+  agent.add(`Wah bhai! Order ka mood hai?
+
+Pehle apna mobile number daal do (11 digit)\nExample: 03331234567`);
+}
+
+// DATA COLLECTION – HAR NEXT MESSAGE YAHAN AAYEGA
+async function collectDetails(agent) {
+  const sessionId = agent.session.split('/').pop();
+  const state = USER_STATE[sessionId];
+  if (!state) return;
+
+  const input = agent.query.trim();
+
+  // 1. PHONE
+  if (state.step === 'phone') {
+    const clean = input.replace(/[-\s]/g, '');
+    if (!/^03[0-4]\d{8}$/.test(clean)) {
+      agent.add("Bhai sahi number daal do na\nExample: 03331234567");
+      return;
+    }
+    state.data.phone = clean;
+    state.step = 'name';
+    agent.add(`Number save ho gaya ${clean}!
+
+Ab apna pura naam bata do`);
   }
 
-  // Start collecting user info
-  async function startOrdering() {
-    USER_STATE[sessionId] = { step: 'phone', data: {} };
-    agent.add(`واہ بھائی! نیا آرڈر کرنے کا موڈ ہے؟ 🔥
+  // 2. NAME
+  else if (state.step === 'name') {
+    state.data.name = input;
+    state.step = 'email';
+    agent.add(`Wah ${input} bohot acha naam hai!
 
-پہلے اپنا موبائل نمبر بتا دو (11 ڈیجٹ)\nمثال: 03331234567`);
+Email daal do (order update ke liye) ya "skip" likh do`);
   }
 
-  // Collect details step by step
-  async function collectDetails() {
-    if (!USER_STATE[sessionId]) return;
+  // 3. EMAIL
+  else if (state.step === 'email') {
+    state.data.email = input.toLowerCase() === 'skip' ? null : input;
+    state.step = 'address';
+    agent.add(`Email save!
 
-    const input = agent.query.trim();
-    const state = USER_STATE[sessionId];
-
-    if (state.step === 'phone') {
-      if (!/^(03[0-4]\d{8})$/.test(input.replace(/[-\s]/g,''))) {
-        agent.add("بھائی درست نمبر بھیجو نا 😅\nمثال: 03331234567");
-        return;
-      }
-      state.data.phone = input.replace(/[-\s]/g,'');
-      state.step = 'name';
-      agent.add(`اوکے ${state.data.phone} سیو! 
-
-اب پورا نام بتا دو یار ✍️`);
-    }
-    else if (state.step === 'name') {
-      state.data.name = input;
-      state.step = 'email';
-      agent.add(`واہ ${input} بہت اچھا نام ہے! 
-
-ای میل بتا دو (یا "skip" لکھ دو)`);
-    }
-    else if (state.step === 'email') {
-      state.data.email = (input.toLowerCase() === 'skip') ? null : input;
-      state.step = 'address';
-      agent.add(`ٹھیک ہے! 
-
-اب ڈلیوری ایڈریس بتا دو (گلی، سیکٹر، گھر نمبر)\nیا "skip" لکھ دو`);
-    }
-    else if (state.step === 'address') {
-      state.data.address = (input.toLowerCase() !== 'skip') ? input : null;
-
-      // Save to Supabase
-      await supabase.from('profiles').upsert({
-        phone: state.data.phone,
-        full_name: state.data.name,
-        email: state.data.email,
-        address: state.data.address,
-        city: "Karachi",
-        updated_at: new Date()
-      });
-
-      delete USER_STATE[sessionId];
-
-      agent.add(`بھائی سب ڈیٹا سیو ہو گیا! 
-
-اب بتاؤ کیا چاہیے؟
-• پرچی اپ لوڈ کروائیں؟
-• کوئی دوائی سرچ کریں؟
-• فارماسسٹ سے بات کریں؟`);
-
-      agent.add(new Suggestion('پرچی اپ لوڈ کریں'));
-      agent.add(new Suggestion('فارماسسٹ سے بات کریں'));
-    }
+Ab delivery address daal do (ghar no, gali, area)\nya "skip" likh do`);
   }
 
+  // 4. ADDRESS + FINAL SAVE + CLEANUP
+  else if (state.step === 'address') {
+    state.data.address = input.toLowerCase() !== 'skip' ? input : null;
+
+    // SUPABASE MEIN SAVE
+    await supabase.from('profiles').upsert({
+      phone: state.data.phone,
+      full_name: state.data.name,
+      email: state.data.email,
+      address: state.data.address,
+      city: "Karachi",
+      updated_at: new Date()
+    });
+
+    delete USER_STATE[sessionId]; // session khatam
+
+    agent.add(`Bhai sab data save ho gaya!
+
+Ab batao kya karna hai?
+• Parchi upload karo
+• Pharmacist se baat
+• Dawai search karo`);
+
+    agent.add(new Suggestion('Parchi upload karo'));
+    agent.add(new Suggestion('Pharmacist se baat'));
+  }
+}
+
+// PHARMACIST HANDOVER – YE AB ATKEGA NAHI
+async function talkToPharmacist(agent) {
+  const sessionId = agent.session.split('/').pop();
+
+  await supabase.from('conversations').upsert({
+    session_id: sessionId,
+    needs_human: true,
+    phone: USER_STATE[sessionId]?.data?.phone || null
+  });
+
+  agent.add(`Theek hai bhai, pharmacist se connect kar raha hun...
+1 minute wait karo, bohot jaldi aa jayega`);
+}
+
+// INTENT MAP – YE SABSE ZAROORI HAI
+intentMap.set('Default Welcome Intent', welcome);
+intentMap.set('start.ordering', startOrdering);           // ye intent Dialogflow mein banao
+intentMap.set('talk.to.pharmacist', talkToPharmacist);   // ye bhi banao
+
+// FALLBACK – DATA COLLECTION + NORMAL GEMINI
+intentMap.set('Default Fallback Intent', async (agent) => {
+  const sessionId = agent.session.split('/').pop();
+
+  // agar data collection chal raha ho
+  if (USER_STATE[sessionId]) {
+    await collectDetails(agent);
+    return;
+  }
+
+  // agar user ne "pharmacist" ya medical keyword bola ho
+  if (/pharmacist|doctor|human|bimar|urgent|pain|dosage|khurak|side effect/i.test(agent.query)) {
+    await talkToPharmacist(agent);
+    return;
+  }
+
+  // warna normal Gemini fallback
+  await fallback(agent);
+});
   // Prescription upload
   async function uploadPrescription() {
     const fileName = `${sessionId}/${uuidv4()}.jpg`;

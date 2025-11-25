@@ -1,4 +1,5 @@
-// server.js - Complete Karachi Pharmacy Bot (Grok-style baat karega!)
+
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -16,55 +17,30 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// Global state for collecting user info
+// Global state for user data collection
 const USER_STATE = {};
 
- const GROK_STYLE_PROMPT = `You are MedBot, a helpful Pakistani pharmacy assistant for MedEasy Pharmacy in Karachi.
-Speak in Roman Urdu + English mix (like Karachi people talk).
-Rules:
-- NEVER diagnose, prescribe, or give dosage.
-- For medical questions (bimar hoon, pain, dosage): Say "Sorry bhai, main doctor nahi. Pharmacist se baat karo? Main connect kar dun."
-- If query in Urdu (bimar, dawai, parchi): Reply in Roman Urdu.
-- Be fun, empathetic, like a friend: Use "bhai", "yar", "theek hai".
-- If low confidence, ask to repeat in English or Urdu.`;
+// Log messages to Supabase
+const log = async (sessionId, sender, text) => {
+  await supabase.from('messages').insert({ session_id: sessionId, sender, text }).catch(() => {});
+};
 
-app.post('/webhook', async (req, res) => {
-  const agent = new WebhookClient({ request: req, response: res });
-  const sessionId = agent.session.split('/').pop();
-
-  const log = async (sender, text) => {
-    await supabase.from('messages').insert({ session_id: sessionId, sender, text }).catch(() => {});
-  };
-
- const geminiReply = async (query) => {
+// Gemini reply with Urdu detection
+const geminiReply = async (query) => {
   try {
-    // Simple Urdu detection (add more words as needed)
-    const isUrdu = /bimar|dawai|parchi|dosage|pain|khurak/i.test(query);
-    let prompt = GROK_STYLE_PROMPT;
-    if (isUrdu) {
-      prompt += `\nUser query in Urdu: ${query}. Reply in Roman Urdu.`;
-    }
-    const chat = model.startChat({
-      history: [{ role: "model", parts: [{ text: prompt }] }]
-    });
-    const result = await chat.sendMessage(query);
-    let reply = result.response.text();
-    
-    // Safety for medical
-    if (/bimar|sick|pain|dosage|side effect/i.test(reply.toLowerCase())) {
-      reply = "Sorry bhai, main medical advice nahi de sakta. Kya pharmacist se connect kar dun? (Yes/No)";
-    }
-    return reply;
+    const isUrdu = /bimar|dawai|parchi|pharmacist|doctor|pain|urgent|khurak|order|bhai|yar|skip/i.test(query);
+    const prompt = isUrdu 
+      ? `User ne Roman Urdu mein bola: "${query}". Karachi style Roman Urdu mein funny aur dostana reply karo. Medical advice bilkul mat dena.`
+      : `User ne English mein bola: "${query}". Normal English mein reply karo.`;
+
+    const result = await model.generateContent(prompt + "\nSirf ek message mein reply karo.");
+    return result.response.text() || "Sorry bhai, samajh nahi aaya.";
   } catch (e) {
-    return "Yar, thodi problem aa gayi. Pharmacist se baat karo?";
+    return "Yar network mein masla hai, pharmacist se baat karo?";
   }
 };
 
-  // Welcome
- // GLOBAL STATE – USER KA DATA YAHAN STORE HOGA
-const USER_STATE = {};
-
-// WELCOME MESSAGE
+// Welcome
 async function welcome(agent) {
   agent.add(`Assalamualaikum bhai! MedEasy Pharmacy mein khush aamdeed
 
@@ -79,17 +55,16 @@ Kya haal hai? Aaj kya chahiye?
   agent.add(new Suggestion('Pharmacist se baat karo'));
 }
 
-// JAB USER BOLE "NAYA ORDER" YA BUTTON DABAYE
+// Start order → collect data
 async function startOrdering(agent) {
   const sessionId = agent.session.split('/').pop();
   USER_STATE[sessionId] = { step: 'phone', data: {} };
-
   agent.add(`Wah bhai! Order ka mood hai?
 
-Pehle apna mobile number daal do (11 digit)\nExample: 03331234567`);
+Pehle mobile number daal do (11 digit)\nExample: 03331234567`);
 }
 
-// DATA COLLECTION – HAR NEXT MESSAGE YAHAN AAYEGA
+// Collect user data step by step
 async function collectDetails(agent) {
   const sessionId = agent.session.split('/').pop();
   const state = USER_STATE[sessionId];
@@ -97,7 +72,6 @@ async function collectDetails(agent) {
 
   const input = agent.query.trim();
 
-  // 1. PHONE
   if (state.step === 'phone') {
     const clean = input.replace(/[-\s]/g, '');
     if (!/^03[0-4]\d{8}$/.test(clean)) {
@@ -110,17 +84,13 @@ async function collectDetails(agent) {
 
 Ab apna pura naam bata do`);
   }
-
-  // 2. NAME
   else if (state.step === 'name') {
     state.data.name = input;
     state.step = 'email';
     agent.add(`Wah ${input} bohot acha naam hai!
 
-Email daal do (order update ke liye) ya "skip" likh do`);
+Email daal do ya "skip" likh do`);
   }
-
-  // 3. EMAIL
   else if (state.step === 'email') {
     state.data.email = input.toLowerCase() === 'skip' ? null : input;
     state.step = 'address';
@@ -128,12 +98,9 @@ Email daal do (order update ke liye) ya "skip" likh do`);
 
 Ab delivery address daal do (ghar no, gali, area)\nya "skip" likh do`);
   }
-
-  // 4. ADDRESS + FINAL SAVE + CLEANUP
   else if (state.step === 'address') {
     state.data.address = input.toLowerCase() !== 'skip' ? input : null;
 
-    // SUPABASE MEIN SAVE
     await supabase.from('profiles').upsert({
       phone: state.data.phone,
       full_name: state.data.name,
@@ -143,7 +110,7 @@ Ab delivery address daal do (ghar no, gali, area)\nya "skip" likh do`);
       updated_at: new Date()
     });
 
-    delete USER_STATE[sessionId]; // session khatam
+    delete USER_STATE[sessionId];
 
     agent.add(`Bhai sab data save ho gaya!
 
@@ -157,7 +124,22 @@ Ab batao kya karna hai?
   }
 }
 
-// PHARMACIST HANDOVER – YE AB ATKEGA NAHI
+// Prescription upload
+async function uploadPrescription(agent) {
+  const sessionId = agent.session.split('/').pop();
+  const fileName = `${sessionId}/${uuidv4()}.jpg`;
+  const { data } = await supabase.storage.from('prescriptions').createSignedUploadUrl(fileName);
+
+  agent.add(`Bhai parchi ki clear photo yahan upload kar do
+
+${data.signedUrl}
+
+5-10 min mein check kar ke bata denge!`);
+}
+async function medicineSearch(agent) {
+  agent.add(`Bhai konsi dawai dhundni hai? Naam batao (jaise Panadol, Dolo 650, etc)\nYa generic name bhi chalega`);
+
+// Pharmacist handover
 async function talkToPharmacist(agent) {
   const sessionId = agent.session.split('/').pop();
 
@@ -168,85 +150,36 @@ async function talkToPharmacist(agent) {
   });
 
   agent.add(`Theek hai bhai, pharmacist se connect kar raha hun...
-1 minute wait karo, bohot jaldi aa jayega`);
+1 minute wait karo, jaldi aa jayega`);
 }
 
-// INTENT MAP – YE SABSE ZAROORI HAI
-intentMap.set('Default Welcome Intent', welcome);
-intentMap.set('start.ordering', startOrdering);           // ye intent Dialogflow mein banao
-intentMap.set('talk.to.pharmacist', talkToPharmacist);   // ye bhi banao
+// Fallback with auto-handover
+async function fallback(agent) {
+  await log(agent.session.split('/').pop(), 'user', agent.query);
 
-// FALLBACK – DATA COLLECTION + NORMAL GEMINI
-intentMap.set('Default Fallback Intent', async (agent) => {
+  // Medical/Urdu keywords → direct handover
+  if (/bimar|dawai|parchi|pharmacist|doctor|pain|urgent|khurak|order|bhai|yar|skip/i.test(agent.query)) {
+    await talkToPharmacist(agent);
+    return;
+  }
+
+  const reply = await geminiReply(agent.query);
+  agent.add(reply);
+  await log(agent.session.split('/').pop(), 'bot', reply);
+}
+
+// Webhook route
+app.post('/webhook', async (req, res) => {
+  const agent = new WebhookClient({ request: req, response: res });
   const sessionId = agent.session.split('/').pop();
 
-  // agar data collection chal raha ho
-  if (USER_STATE[sessionId]) {
-    await collectDetails(agent);
-    return;
-  }
-
-  // agar user ne "pharmacist" ya medical keyword bola ho
-  if (/pharmacist|doctor|human|bimar|urgent|pain|dosage|khurak|side effect/i.test(agent.query)) {
-    await talkToPharmacist(agent);
-    return;
-  }
-
-  // warna normal Gemini fallback
-  await fallback(agent);
-});
-  // Prescription upload
-  async function uploadPrescription() {
-    const fileName = `${sessionId}/${uuidv4()}.jpg`;
-    const { data } = await supabase.storage.from('prescriptions').createSignedUploadUrl(fileName);
-    agent.add(`بھائی پرچی کی واضح تصویر یہاں اپ لوڈ کر دو 
-
-${data.signedUrl}
-
-5-10 منٹ میں چیک کر کے بتا دیں گے!`);
-  }
-
-  // Talk to pharmacist
-  aasync function talkToPharmacist() {
-  await supabase.from('conversations').upsert({ 
-    session_id: sessionId, 
-    needs_human: true,
-    phone: USER_STATE[sessionId]?.data?.phone || null
-  });
-  agent.add("Theek hai bhai, pharmacist se connect kar raha hoon. 1 minute wait karo…");
-  await log('bot', 'Pharmacist handover triggered');
-}
-
-  // Fallback → Grok style reply
- // Auto handover on medical keywords
-async function fallback(agent) {
-  await log('user', agent.query);
-
-  // agar medical keyword ya urdu word ho to direct handover
-  if (/bimar|dawai|parchi|pharmacist|doctor|pain|urgent|khurak|order|skip|bhai|yar/i.test(agent.query)) {
-    await talkToPharmacist(agent);
-    return;
-  }
-
-  // warna Gemini ko Urdu mein force karo
-  const result = await model.generateContent(`
-    User (Karachi, Pakistan) ne ye likha: "${agent.query}"
-    Sirf Roman Urdu mein reply karo, bilkul dost jaisa, funny aur helpful.
-    Medical advice bilkul mat dena. Agar samajh na aaye to pharmacist handover kar do.
-    Sirf ek message mein reply karo.
-  `);
-
-  const reply = result.response.text() || "Sorry bhai, samajh nahi aaya. Pharmacist se baat karo?";
-  agent.add(reply);
-  await log('bot', reply);
-}
-
-  // Intent Map
   const intentMap = new Map();
   intentMap.set('Default Welcome Intent', welcome);
   intentMap.set('start.ordering', startOrdering);
   intentMap.set('prescription.upload', uploadPrescription);
   intentMap.set('talk.to.pharmacist', talkToPharmacist);
+ intentMap.set('medicine.search', medicineSearch);
+
   intentMap.set('Default Fallback Intent', async (agent) => {
     if (USER_STATE[sessionId]) {
       await collectDetails(agent);
@@ -260,7 +193,6 @@ async function fallback(agent) {
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`بھائی تمہارا Grok جیسا بوٹ LIVE ہے!`);
-  console.log(`http://localhost:${PORT}`);
-  console.log(`ngrok چلاؤ: npx ngrok http ${PORT}`);
+  console.log(`Bhai tumhara Grok jaisa bot LIVE hai! Port: ${PORT}`);
+  console.log(`ngrok chalao: npx ngrok http ${PORT}`);
 });
